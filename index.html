@@ -501,6 +501,26 @@
                 slider.addEventListener('input', (e) => { numInput.value = e.target.value; updateModelTransform(); });
                 numInput.addEventListener('input', (e) => { slider.value = e.target.value; updateModelTransform(); });
             });
+
+            // ====== 新增：鼠标悬停调节面板时，自动透明化中间 UI ======
+            const blocker = document.getElementById('blocker');
+            // 为遮罩层添加平滑的渐隐渐显过渡动画
+            blocker.style.transition = 'opacity 0.2s ease-in-out';
+            
+            const panel = document.getElementById('transform-panel');
+            
+            // 鼠标移入左侧面板：隐藏中间 UI
+            panel.addEventListener('mouseenter', () => {
+                blocker.style.opacity = '0';
+                blocker.style.pointerEvents = 'none'; // 禁用中间层的点击，防止阻挡视线或误触
+            });
+            
+            // 鼠标移出左侧面板：恢复中间 UI
+            panel.addEventListener('mouseleave', () => {
+                blocker.style.opacity = '1';
+                blocker.style.pointerEvents = 'auto'; // 恢复中间层的交互功能
+            });
+            // ========================================================
         }
 
         function updateModelTransform() {
