@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D Bungee & 3DGS Map Integration V1.8</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        #crosshair { width: 4px; height: 4px; background-color: rgba(255, 255, 255, 0.8); border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        
+        #blocker { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; pointer-events: auto; z-index: 10; gap: 15px; }
+        #instructions { text-align: center; background: rgba(0, 0, 0, 0.7); padding: 25px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); margin-bottom: 0; max-width: 450px;}
+        h1 { margin-top: 0; color: #4ae0c0; text-shadow: 0 0 10px rgba(74, 224, 192, 0.5); font-size: 24px; }
+        .key { display: inline-block; background: #fff; color: #333; padding: 4px 10px; border-radius: 4px; font-weight: bold; margin: 0 4px; }
+        
+        #hud { position: absolute; bottom: 30px; left: 30px; color: #fff; font-size: 16px; text-shadow: 1px 1px 2px #000; background: rgba(0,0,0,0.5); padding: 15px; border-radius: 8px; border-left: 4px solid #4ae0c0; }
+        .hud-value { font-weight: bold; font-family: monospace; font-size: 20px; color: #4ae0c0; }
+        #water-splash { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 180, 180, 0); pointer-events: none; transition: background 0.2s ease-out; mix-blend-mode: screen; }
+        
+        #map-loader { background: rgba(20, 22, 28, 0.9); padding: 20px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1); width: 400px; text-align: center; pointer-events: auto; max-height: 50vh; overflow-y: auto; }
+        #map-loader h3 { margin: 0 0 15px 0; color: #fff; }
+        .input-group { margin-bottom: 15px; display: flex; gap: 10px; }
+        input[type="text"] { flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: #fff; }
+        button { padding: 8px 15px; background: #4ae0c0; color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #3bc0a0; }
+        .file-upload-wrapper { position: relative; overflow: hidden; display: inline-block; width: 100%; }
+        .file-upload-wrapper input[type="file"] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; }
+        .btn-upload { display: block; width: 100%; padding: 10px 0; background: #555; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        #loading-status { margin-top: 10px; font-size: 14px; color: #ffaa00; display: none; }
+
+        #saved-maps-container { margin-top: 15px; text-align: left; border-top: 1px solid #333; padding-top: 15px; }
+        #saved-maps-container h4 { margin: 0 0 10px 0; color: #4ae0c0; }
+        .map-item { display: flex; justify-content: space-between; align-items: center; background: #1a1d24; padding: 8px; border-radius: 4px; margin-bottom: 6px; border: 1px solid #2d3139; }
+        .map-item span { font-size: 13px; color: #eee; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+        .map-item-buttons { display: flex; gap: 5px; }
+        .btn-load-map { background: #4ae0c0; color: #000; padding: 4px 8px; font-size: 11px; }
+        .btn-del-map { background: #ff4444; color: #fff; padding: 4px 8px; font-size: 11px; }
+        .btn-del-map:hover { background: #cc3333; }
+
+        #transform-panel { 
+            position: absolute; top: 20px; left: 20px; background: rgba(15, 15, 25, 0.85); 
+            padding: 15px; border-radius: 8px; border: 1px solid rgba(74, 224, 192, 0.3); 
+            color: #fff; font-size: 13px; width: 280px; pointer-events: auto; z-index: 20;
+            backdrop-filter: blur(5px); display: none;
+        }
+        #transform-panel h4 { margin: 0 0 10px 0; color: #4ae0c0; text-align: center; border-bottom: 1px solid #333; padding-bottom: 5px; }
+        .control-row { display: flex; align-items: center; margin-bottom: 8px; gap: 5px; }
+        .control-row label { width: 55px; font-weight: bold; }
+        .control-row input[type="range"] { flex: 1; height: 4px; accent-color: #4ae0c0; }
+        .control-row input[type="number"] { width: 50px; background: #222; color: #fff; border: 1px solid #555; border-radius: 3px; padding: 2px; text-align: center; }
+        .btn-save-map { width: 100%; margin-top: 10px; padding: 8px; background: #ffaa00; color: #000; font-weight: bold; border-radius: 4px; border: none; cursor: pointer; }
+        .btn-save-map:hover { background: #e09500; }
+
+        #lang-selector { position: absolute; top: 20px; right: 20px; z-index: 30; padding: 6px; background: rgba(0,0,0,0.7); color: #fff; border: 1px solid #4ae0c0; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "./libs/three.module.js",
+                "three/addons/": "./libs/jsm/",
+                "@mkkellogg/gaussian-splats-3d": "./libs/gaussian-splats-3d.module.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <!-- 语言切换器 -->
+    <select id="lang-selector">
+        <option value="zh">🇨🇳 中文</option>
+        <option value="en">🇺🇸 English</option>
+        <option value="ja">🇯🇵 日本語</option>
+        <option value="ko">🇰🇷 한국어</option>
+    </select>
+
+    <div id="canvas-container"></div>
+    
+    <div id="transform-panel">
+        <h4 data-i18n="transformTitle">场景调整</h4>
+        <div style="font-size:11px; color:#aaa; margin-bottom:10px; text-align:center;" data-i18n="transformDesc">（进入场景后可按 ESC 唤出鼠标调整）</div>
+        <div class="control-row"><label data-i18n="posX">位置 X:</label><input type="range" id="posX" min="-100" max="100" value="0" step="0.5"><input type="number" id="posX_num" value="0" step="0.5"></div>
+        <div class="control-row"><label data-i18n="posY">位置 Y:</label><input type="range" id="posY" min="-100" max="100" value="-10" step="0.5"><input type="number" id="posY_num" value="-10" step="0.5"></div>
+        <div class="control-row"><label data-i18n="posZ">位置 Z:</label><input type="range" id="posZ" min="-100" max="100" value="0" step="0.5"><input type="number" id="posZ_num" value="0" step="0.5"></div>
+        <hr style="border:0; border-top:1px solid #333; margin:10px 0;">
+        <div class="control-row"><label data-i18n="rotX">旋转 X°:</label><input type="range" id="rotX" min="-180" max="180" value="0"><input type="number" id="rotX_num" value="0"></div>
+        <div class="control-row"><label data-i18n="rotY">旋转 Y°:</label><input type="range" id="rotY" min="-180" max="180" value="0"><input type="number" id="rotY_num" value="0"></div>
+        <div class="control-row"><label data-i18n="rotZ">旋转 Z°:</label><input type="range" id="rotZ" min="-180" max="180" value="0"><input type="number" id="rotZ_num" value="0"></div>
+        <button id="save-map-btn" class="btn-save-map" data-i18n="saveMapBtn">🗺️ 保存并导出当前场景参数</button>
+    </div>
+
+    <div id="ui-layer">
+        <div id="crosshair"></div>
+        <div id="hud">
+            <div><span data-i18n="hudAlt">海拔高度: </span><span id="alt-val" class="hud-value">43.0</span> m</div>
+            <div><span data-i18n="hudVel">瞬时速度: </span><span id="vel-val" class="hud-value">0.0</span> km/h</div>
+            <div><span data-i18n="hudState">状态: </span><span id="state-val" style="color: #ffaa00;" data-i18n="stateReady">准备跳跃</span></div>
+        </div>
+        <div id="water-splash"></div>
+    </div>
+
+    <div id="blocker">
+        <div id="instructions">
+            <h1 data-i18n="mainTitle">高斯云蹦极模拟器</h1>
+            <p style="font-size: 18px; color: #4ae0c0; cursor: pointer; font-weight: bold;" id="start-btn" data-i18n="startBtn">▶ 点击此处进入场景</p>
+            <p data-i18n="instructionTip">按 <span class="key">SPACE</span> 起跳 | 按 <span class="key">R</span> 键重置</p>
+        </div>
+        
+        <div id="map-loader">
+            <h3 data-i18n="loaderTitle">加载高斯场景</h3>
+            <div class="input-group">
+                <input type="text" id="url-input" placeholder="输入 .splat / .ply / .spz 在线链接" value="https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bonsai/bonsai-7k.splat">
+                <button id="load-url-btn" data-i18n="loadUrlBtn">加载网络场景</button>
+            </div>
+            <div style="margin: 5px 0; color: #888; font-size:12px;">— OR —</div>
+            <div class="file-upload-wrapper">
+                <button class="btn-upload" data-i18n="uploadLocal">📁 选择本地 .splat / .ply / .spz 文件</button>
+                <input type="file" id="file-input" accept=".splat,.ply,.spz">
+            </div>
+            <div id="loading-status" data-i18n="loading">加载解析中，根据模型文件大小加载时间不同...</div>
+
+            <div id="saved-maps-container">
+                <h4 data-i18n="savedMapsTitle">💾 快捷选择已有地图</h4>
+                <div id="maps-list"></div>
+                <!-- 导入地图功能 -->
+                <div class="file-upload-wrapper" style="margin-top: 10px;">
+                    <button class="btn-upload" style="background:#3b82f6;" data-i18n="importMapBtn">📥 导入地图参数</button>
+                    <input type="file" id="import-map-input" accept=".json">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        import { DropInViewer, SceneFormat } from '@mkkellogg/gaussian-splats-3d';
+
+        // === i18n 多语言系统 ===
+        const i18nDict = {
+            zh: {
+                transformTitle: "场景调整", transformDesc: "（进入场景后可按 ESC 唤出鼠标调整）",
+                posX: "位置 X:", posY: "位置 Y:", posZ: "位置 Z:", rotX: "旋转 X°:", rotY: "旋转 Y°:", rotZ: "旋转 Z°:",
+                saveMapBtn: "🗺️ 保存并导出当前场景参数", hudAlt: "海拔高度: ", hudVel: "瞬时速度: ", hudState: "状态: ",
+                stateReady: "准备跳跃", stateFalling: "正在坠落！", stateStable: "悬空稳定",
+                mainTitle: "高斯云蹦极模拟器", startBtn: "▶ 点击此处进入场景",
+                instructionTip: '按 <span class="key">SPACE</span> 起跳 | 按 <span class="key">R</span> 键重置',
+                loaderTitle: "加载高斯场景", loadUrlBtn: "加载网络场景", uploadLocal: "📁 选择本地 .splat / .ply / .spz 文件",
+                loading: "加载解析中，根据模型文件大小加载时间不同...", savedMapsTitle: "💾 快捷选择已有地图",
+                importMapBtn: "📥 导入地图参数", noMaps: "暂无保存的自定义地图",
+                btnLoad: "载入", btnDel: "删除"
+            },
+            en: {
+                transformTitle: "Scene Adjustment", transformDesc: "(Press ESC in scene to adjust with mouse)",
+                posX: "Pos X:", posY: "Pos Y:", posZ: "Pos Z:", rotX: "Rot X°:", rotY: "Rot Y°:", rotZ: "Rot Z°:",
+                saveMapBtn: "🗺️ Save & Export Scene Params", hudAlt: "Altitude: ", hudVel: "Speed: ", hudState: "Status: ",
+                stateReady: "Ready", stateFalling: "Falling!", stateStable: "Stable",
+                mainTitle: "Gaussian Cloud Bungee Simulator", startBtn: "▶ Click here to enter scene",
+                instructionTip: 'Press <span class="key">SPACE</span> to jump | Press <span class="key">R</span> to reset',
+                loaderTitle: "Load Gaussian Scene", loadUrlBtn: "Load Online", uploadLocal: "📁 Select Local .splat/.ply/.spz",
+                loading: "Loading and parsing, time varies by model size...", savedMapsTitle: "💾 Quick Select Maps",
+                importMapBtn: "📥 Import Map Params", noMaps: "No saved custom maps",
+                btnLoad: "Load", btnDel: "Del"
+            },
+            ja: {
+                transformTitle: "シーン調整", transformDesc: "（シーン内で ESC を押してマウス調整）",
+                posX: "位置 X:", posY: "位置 Y:", posZ: "位置 Z:", rotX: "回転 X°:", rotY: "回転 Y°:", rotZ: "回転 Z°:",
+                saveMapBtn: "🗺️ シーンパラメータを保存してエクスポート", hudAlt: "標高: ", hudVel: "速度: ", hudState: "状態: ",
+                stateReady: "準備完了", stateFalling: "落下中！", stateStable: "安定",
+                mainTitle: "ガウスクラウドバンジーシミュレーター", startBtn: "▶ ここをクリックして開始",
+                instructionTip: '<span class="key">SPACE</span> でジャンプ | <span class="key">R</span> でリセット',
+                loaderTitle: "ガウスシーンをロード", loadUrlBtn: "オンラインをロード", uploadLocal: "📁 ローカルファイルを選択",
+                loading: "解析・読み込み中。モデルのサイズによって時間は異なります...", savedMapsTitle: "💾 保存済みマップ",
+                importMapBtn: "📥 マップパラメータのインポート", noMaps: "保存されたマップはありません",
+                btnLoad: "ロード", btnDel: "削除"
+            },
+            ko: {
+                transformTitle: "씬 조정", transformDesc: "(씬에서 ESC를 눌러 마우스로 조정)",
+                posX: "위치 X:", posY: "위치 Y:", posZ: "위치 Z:", rotX: "회전 X°:", rotY: "회전 Y°:", rotZ: "회전 Z°:",
+                saveMapBtn: "🗺️ 씬 매개변수 저장 및 내보내기", hudAlt: "고도: ", hudVel: "속도: ", hudState: "상태: ",
+                stateReady: "준비", stateFalling: "추락 중!", stateStable: "안정됨",
+                mainTitle: "가우시안 클라우드 번지 시뮬레이터", startBtn: "▶ 여기를 클릭하여 입장",
+                instructionTip: '<span class="key">SPACE</span> 점프 | <span class="key">R</span> 리셋',
+                loaderTitle: "가우시안 씬 로드", loadUrlBtn: "온라인 로드", uploadLocal: "📁 로컬 파일 선택",
+                loading: "불러오고 분석하는 중, 모델 파일 크기에 따라 시간이 다릅니다...", savedMapsTitle: "💾 저장된 맵 선택",
+                importMapBtn: "📥 맵 매개변수 가져오기", noMaps: "저장된 커스텀 맵이 없습니다",
+                btnLoad: "로드", btnDel: "삭제"
+            }
+        };
+
+        let currentLang = 'zh';
+
+        function updateLanguage(lang) {
+            currentLang = lang;
+            const dict = i18nDict[lang];
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (dict[key]) {
+                    if (el.tagName === 'INPUT' && el.type === 'text') el.placeholder = dict[key];
+                    else el.innerHTML = dict[key];
+                }
+            });
+            renderSavedMapsList(); // 刷新列表按钮文字
+            
+            // HUD 状态更新同步
+            if (!isJumping) document.getElementById('state-val').innerText = dict.stateReady;
+            else if (velocity.length() < 0.5 && Math.abs(playerPos.y - anchorPos.y) > physics.restLength) document.getElementById('state-val').innerText = dict.stateStable;
+            else document.getElementById('state-val').innerText = dict.stateFalling;
+        }
+
+        document.getElementById('lang-selector').addEventListener('change', (e) => updateLanguage(e.target.value));
+
+        // === 系统状态定义 ===
+        let camera, scene, renderer, controls, gsViewer;
+        let playerBody = new THREE.Group();
+        let isReady = false, isJumping = false;
+        let clock = new THREE.Clock();
+        let waterMesh;
+        let proceduralGroup = new THREE.Group(); 
+        let currentActiveModelSource = { url: '', format: null, isLocalFile: false, fileName: '' };
+
+        const physics = { mass: 75, gravity: 9.81, restLength: 20, k: 120, damping: 8, airDrag: 0.25 };
+        let playerPos = new THREE.Vector3(0, 45, 4); 
+        const velocity = new THREE.Vector3(0, 0, 0);
+        const anchorPos = new THREE.Vector3(0, 43, 0); 
+
+        let bungyRopeMesh;
+        const ropeMaterial = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.9, metalness: 0.0 });
+        let currentLoadId = 0;
+
+        const altHud = document.getElementById('alt-val');
+        const velHud = document.getElementById('vel-val');
+        const stateHud = document.getElementById('state-val');
+        const splashUI = document.getElementById('water-splash');
+        const loadingStatus = document.getElementById('loading-status');
+        const transformPanel = document.getElementById('transform-panel');
+
+        init();
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = 1; canvas.height = 32;
+            const context = canvas.getContext('2d');
+            const gradient = context.createLinearGradient(0, 0, 0, 32);
+            gradient.addColorStop(0.0, '#0055aa'); gradient.addColorStop(0.5, '#87CEEB'); gradient.addColorStop(1.0, '#cceeff');
+            context.fillStyle = gradient; context.fillRect(0, 0, 1, 32);
+            scene.background = new THREE.CanvasTexture(canvas);
+            scene.fog = new THREE.FogExp2(0x87CEEB, 0.0015);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 0, 0); 
+            playerBody.position.copy(playerPos);
+            scene.add(playerBody);
+            playerBody.add(camera);
+
+            controls = new PointerLockControls(camera, document.body);
+            setupControls();
+            setupLights();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            container.appendChild(renderer.domElement);
+
+            scene.add(proceduralGroup);
+            buildEnhancedEnvironment();
+
+            bungyRopeMesh = new THREE.Mesh(new THREE.BufferGeometry(), ropeMaterial);
+            bungyRopeMesh.castShadow = true;
+            scene.add(bungyRopeMesh);
+
+            gsViewer = new DropInViewer({ 'sharedMemoryForWorkers': false });
+            scene.add(gsViewer);
+
+            window.addEventListener('resize', onWindowResize, false);
+            document.addEventListener('keydown', onKeyDown, false);
+            
+            setupMapLoader();
+            setupTransformUI(); 
+            updateLanguage('zh'); // 初始设置语言
+            animate();
+        }
+
+        function setupMapLoader() {
+            document.getElementById('load-url-btn').addEventListener('click', () => {
+                const url = document.getElementById('url-input').value;
+                if(url) {
+                    const lowerUrl = url.toLowerCase();
+                    let format = SceneFormat.Splat;
+                    if (lowerUrl.endsWith('.ply')) format = SceneFormat.Ply;
+                    else if (lowerUrl.endsWith('.spz')) format = SceneFormat.Spz; 
+                    
+                    currentActiveModelSource = { url: url, format: format, isLocalFile: false, fileName: '' };
+                    loadGaussianSplat(url, format);
+                }
+            });
+
+            document.getElementById('file-input').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const localUrl = URL.createObjectURL(file);
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    let format = SceneFormat.Splat;
+                    if (ext === 'ply') format = SceneFormat.Ply;
+                    else if (ext === 'spz') format = SceneFormat.Spz;
+                    
+                    let targetTransform = null;
+                    if (e.target.dataset.pendingTransform) {
+                        targetTransform = JSON.parse(e.target.dataset.pendingTransform);
+                        delete e.target.dataset.pendingTransform;
+                    }
+                    currentActiveModelSource = { url: '', format: format, isLocalFile: true, fileName: file.name };
+                    loadGaussianSplat(localUrl, format, targetTransform);
+                }
+            });
+
+            document.getElementById('save-map-btn').addEventListener('click', saveCurrentSceneToMap);
+
+            // 导入 JSON 地图文件配置
+            document.getElementById('import-map-input').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const importedMap = JSON.parse(evt.target.result);
+                        if (importedMap.name && importedMap.transform && importedMap.source) {
+                            let savedMaps = JSON.parse(localStorage.getItem('BUNGY_GS_MAPS') || '[]');
+                            savedMaps.push(importedMap);
+                            localStorage.setItem('BUNGY_GS_MAPS', JSON.stringify(savedMaps));
+                            alert(currentLang === 'zh' ? "✅ 地图配置导入成功！" : "✅ Map Config Imported!");
+                            renderSavedMapsList();
+                        } else {
+                            alert(currentLang === 'zh' ? "❌ 文件格式不正确！" : "❌ Invalid file format!");
+                        }
+                    } catch (err) {
+                        alert(currentLang === 'zh' ? "❌ 无法解析该 JSON 文件！" : "❌ Failed to parse JSON!");
+                    }
+                };
+                reader.readAsText(file);
+                e.target.value = ''; // Reset input
+            });
+        }
+
+        function loadGaussianSplat(url, fileFormat, targetTransform = null) {
+            loadingStatus.style.display = 'block';
+            loadingStatus.style.color = "#ffaa00";
+            loadingStatus.innerText = i18nDict[currentLang].loading;
+
+            currentLoadId++;
+            const thisLoadId = currentLoadId; 
+            
+            if (gsViewer) {
+                scene.remove(gsViewer);
+                try { gsViewer.dispose(); } catch (e) {}
+                gsViewer = new DropInViewer({ 'sharedMemoryForWorkers': false });
+                scene.add(gsViewer);
+            }
+
+            proceduralGroup.visible = false;
+
+            const basePx = 0, basePy = -10, basePz = 0;
+            let baseRx = (fileFormat === SceneFormat.Ply) ? -90 : 180;
+            let q = new THREE.Quaternion().setFromEuler(new THREE.Euler(baseRx * Math.PI / 180, 0, 0));
+
+            let uiPx = targetTransform ? targetTransform.px : basePx;
+            let uiPy = targetTransform ? targetTransform.py : basePy;
+            let uiPz = targetTransform ? targetTransform.pz : basePz;
+            let uiRx = targetTransform ? targetTransform.rx : baseRx;
+            let uiRy = targetTransform ? targetTransform.ry : 0;
+            let uiRz = targetTransform ? targetTransform.rz : 0;
+
+            document.getElementById('posX').value = uiPx; document.getElementById('posX_num').value = uiPx;
+            document.getElementById('posY').value = uiPy; document.getElementById('posY_num').value = uiPy;
+            document.getElementById('posZ').value = uiPz; document.getElementById('posZ_num').value = uiPz;
+            document.getElementById('rotX').value = uiRx; document.getElementById('rotX_num').value = uiRx;
+            document.getElementById('rotY').value = uiRy; document.getElementById('rotY_num').value = uiRy;
+            document.getElementById('rotZ').value = uiRz; document.getElementById('rotZ_num').value = uiRz;
+
+            gsViewer.addSplatScene(url, {
+                'format': fileFormat,
+                'position': [basePx, basePy, basePz], 
+                'rotation': [q.x, q.y, q.z, q.w], 
+                'scale': [5, 5, 5] 
+            }).then(() => {
+                if (thisLoadId !== currentLoadId) return; 
+
+                loadingStatus.innerText = currentLang === 'zh' ? "✅ 加载完成！请点击上方进入场景。" : "✅ Loaded! Click above to enter.";
+                loadingStatus.style.color = "#4ae0c0";
+                transformPanel.style.display = 'block'; 
+                proceduralGroup.visible = false; 
+                updateModelTransform(); 
+            }).catch((err) => {
+                if (thisLoadId !== currentLoadId) return; 
+                loadingStatus.innerText = currentLang === 'zh' ? "❌ 加载失败" : "❌ Load Failed";
+                loadingStatus.style.color = "#ff3333";
+                proceduralGroup.visible = true; 
+            });
+        }
+
+        function saveCurrentSceneToMap() {
+            if (!currentActiveModelSource.isLocalFile && !currentActiveModelSource.url) {
+                alert(currentLang === 'zh' ? "未加载任何模型，无法生成地图！" : "No model loaded!");
+                return;
+            }
+
+            const promptText = currentLang === 'zh' ? "请输入此地图的名称:" : "Enter map name:";
+            const defaultName = currentLang === 'zh' ? "自定义高斯峡谷" : "Custom GS Map";
+            const mapName = prompt(promptText, defaultName);
+            if (!mapName) return;
+
+            const transformData = {
+                px: parseFloat(document.getElementById('posX').value),
+                py: parseFloat(document.getElementById('posY').value),
+                pz: parseFloat(document.getElementById('posZ').value),
+                rx: parseFloat(document.getElementById('rotX').value),
+                ry: parseFloat(document.getElementById('rotY').value),
+                rz: parseFloat(document.getElementById('rotZ').value)
+            };
+
+            const mapConfig = { name: mapName, source: currentActiveModelSource, transform: transformData, timestamp: Date.now() };
+
+            let savedMaps = JSON.parse(localStorage.getItem('BUNGY_GS_MAPS') || '[]');
+            savedMaps.push(mapConfig);
+            localStorage.setItem('BUNGY_GS_MAPS', JSON.stringify(savedMaps));
+
+            // 导出功能
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(mapConfig));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", `BungyMap_${mapName.replace(/\s+/g, '_')}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+
+            renderSavedMapsList();
+        }
+
+        function renderSavedMapsList() {
+            const listContainer = document.getElementById('maps-list');
+            listContainer.innerHTML = '';
+            const savedMaps = JSON.parse(localStorage.getItem('BUNGY_GS_MAPS') || '[]');
+
+            if (savedMaps.length === 0) {
+                listContainer.innerHTML = `<div style="color:#666; font-size:12px; text-align:center; padding:10px;">${i18nDict[currentLang].noMaps}</div>`;
+                return;
+            }
+
+            savedMaps.forEach((map, index) => {
+                const item = document.createElement('div');
+                item.className = 'map-item';
+                const displayName = map.source.isLocalFile ? `[Local] ${map.name}` : map.name;
+                item.innerHTML = `
+                    <span title="${map.source.isLocalFile ? map.source.fileName : map.source.url}">${displayName}</span>
+                    <div class="map-item-buttons">
+                        <button class="btn-load-map" data-index="${index}">${i18nDict[currentLang].btnLoad}</button>
+                        <button class="btn-del-map" data-index="${index}">${i18nDict[currentLang].btnDel}</button>
+                    </div>
+                `;
+                listContainer.appendChild(item);
+            });
+
+            listContainer.querySelectorAll('.btn-load-map').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const idx = e.target.getAttribute('data-index');
+                    const targetMap = savedMaps[idx];
+                    if (targetMap.source.isLocalFile) {
+                        alert(currentLang === 'zh' ? `基于本地文件【${targetMap.source.fileName}】。\n请点击“选择本地文件”重新选取它，变换参数将自动应用！` : `Select the local file [${targetMap.source.fileName}] again. Parameters will be auto-applied.`);
+                        document.getElementById('file-input').dataset.pendingTransform = JSON.stringify(targetMap.transform);
+                    } else {
+                        currentActiveModelSource = targetMap.source;
+                        loadGaussianSplat(targetMap.source.url, targetMap.source.format, targetMap.transform);
+                    }
+                });
+            });
+
+            listContainer.querySelectorAll('.btn-del-map').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const idx = e.target.getAttribute('data-index');
+                    if (confirm(currentLang === 'zh' ? `确定删除地图 "${savedMaps[idx].name}" 吗？` : `Delete map "${savedMaps[idx].name}"?`)) {
+                        savedMaps.splice(idx, 1);
+                        localStorage.setItem('BUNGY_GS_MAPS', JSON.stringify(savedMaps));
+                        renderSavedMapsList();
+                    }
+                });
+            });
+        }
+
+        function setupTransformUI() {
+            const inputs = ['posX', 'posY', 'posZ', 'rotX', 'rotY', 'rotZ'];
+            inputs.forEach(id => {
+                const slider = document.getElementById(id);
+                const numInput = document.getElementById(id + '_num');
+                slider.addEventListener('input', (e) => { numInput.value = e.target.value; updateModelTransform(); });
+                numInput.addEventListener('input', (e) => { slider.value = e.target.value; updateModelTransform(); });
+            });
+        }
+
+        function updateModelTransform() {
+            if (!gsViewer) return;
+            const px = parseFloat(document.getElementById('posX').value);
+            const py = parseFloat(document.getElementById('posY').value);
+            const pz = parseFloat(document.getElementById('posZ').value);
+            const rx = parseFloat(document.getElementById('rotX').value) * Math.PI / 180;
+            const ry = parseFloat(document.getElementById('rotY').value) * Math.PI / 180;
+            const rz = parseFloat(document.getElementById('rotZ').value) * Math.PI / 180;
+            gsViewer.position.set(px, py, pz);
+            gsViewer.rotation.set(rx, ry, rz);
+        }
+
+        function setupControls() {
+            const blocker = document.getElementById('blocker');
+            const startBtn = document.getElementById('start-btn');
+            startBtn.addEventListener('click', () => controls.lock());
+            controls.addEventListener('lock', () => {
+                blocker.style.display = 'none'; isReady = true;
+                transformPanel.style.display = 'none'; // 锁定视角进入游戏时隐藏调参面板
+            });
+            controls.addEventListener('unlock', () => {
+                blocker.style.display = 'flex'; isReady = false;
+                if (currentActiveModelSource.url || currentActiveModelSource.isLocalFile) {
+                    transformPanel.style.display = 'block'; // 退出视角时恢复面板显示
+                }
+            });
+        }
+
+        function setupLights() {
+            const ambientLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            dirLight.position.set(100, 200, -100);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+        }
+
+        function buildEnhancedEnvironment() {
+            const waterGeo = new THREE.PlaneGeometry(2000, 2000, 128, 128);
+            waterGeo.rotateX(-Math.PI / 2);
+            const waterMat = new THREE.MeshStandardMaterial({ color: 0x008B8B, roughness: 0.2, metalness: 0.8, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+            waterMesh = new THREE.Mesh(waterGeo, waterMat);
+            waterMesh.position.y = 0.5;
+            proceduralGroup.add(waterMesh);
+
+            const cliffGroup = new THREE.Group(); 
+            const rockMat = new THREE.MeshStandardMaterial({ roughness: 1.0, flatShading: true, color: 0x4a3c30 });
+            for(let side of [-110, 110]) {
+                const wall = new THREE.Mesh(new THREE.BoxGeometry(40, 150, 400), rockMat);
+                wall.position.set(side, 30, 0);
+                cliffGroup.add(wall);
+            }
+            proceduralGroup.add(cliffGroup);
+
+            const bridgeGroup = new THREE.Group();
+            const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x6b3535, roughness: 0.8, metalness: 0.4 });
+            const deck = new THREE.Mesh(new THREE.BoxGeometry(120, 1.5, 8), bridgeMat);
+            deck.position.set(0, 43, -4); 
+            bridgeGroup.add(deck);
+            
+            const platform = new THREE.Mesh(new THREE.BoxGeometry(4, 0.5, 6), new THREE.MeshStandardMaterial({ color: 0x888888 }));
+            platform.position.set(0, 43.5, 4); 
+            bridgeGroup.add(platform);
+            scene.add(bridgeGroup); 
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function resetJump() {
+            isJumping = false;
+            playerPos.copy(new THREE.Vector3(0, 45, 4)); 
+            velocity.set(0, 0, 0);                       
+            playerBody.quaternion.identity(); 
+            playerBody.position.copy(playerPos);             
+            camera.fov = 75;                             
+            camera.updateProjectionMatrix();
+            stateHud.innerText = i18nDict[currentLang].stateReady; 
+            stateHud.style.color = "#ffaa00";
+            altHud.innerText = "43.0";
+            velHud.innerText = "0.0";
+        }
+
+        function onKeyDown(e) {
+            if (isReady && e.code === 'Space' && !isJumping) {
+                isJumping = true;
+                stateHud.innerText = i18nDict[currentLang].stateFalling; stateHud.style.color = "#ff3333";
+                velocity.set(0, 0.5, 2.5); 
+            }
+            if (isReady && e.code === 'KeyR' && isJumping) resetJump();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = Math.min(clock.getDelta(), 0.05);
+            
+            if (isJumping) {
+                let force = new THREE.Vector3(0, -physics.mass * physics.gravity, 0);
+                let footPos = playerPos.clone().add(new THREE.Vector3(0, -1.7, 0)); 
+                let ropeVector = new THREE.Vector3().subVectors(footPos, anchorPos);
+                let currentDistance = ropeVector.length();
+
+                if (currentDistance > physics.restLength) {
+                    let stretch = currentDistance - physics.restLength;
+                    force.add(ropeVector.normalize().multiplyScalar(-physics.k * stretch));
+                    force.add(velocity.clone().multiplyScalar(-physics.damping));
+                } else {
+                    force.add(velocity.clone().normalize().multiplyScalar(-physics.airDrag * velocity.lengthSq()));
+                }
+
+                velocity.add(force.divideScalar(physics.mass).multiplyScalar(delta));
+                playerPos.add(velocity.clone().multiplyScalar(delta));
+
+                if (playerPos.y < 1.0) {
+                    playerPos.y = 1.0; velocity.y *= -0.6;
+                    splashUI.style.background = "rgba(0, 200, 255, 0.7)";
+                    setTimeout(() => { splashUI.style.background = "rgba(0, 180, 180, 0)"; }, 400);
+                }
+
+                playerBody.position.copy(playerPos);
+                let targetQuaternion = new THREE.Quaternion();
+                let ropeVectorToCenter = new THREE.Vector3().subVectors(anchorPos, playerPos);
+                let distToAnchor = ropeVectorToCenter.length();
+                
+                if (distToAnchor > physics.restLength - 2) {
+                    let upDir = ropeVectorToCenter.clone().negate().normalize();
+                    targetQuaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), upDir);
+                } else {
+                    let fallSpeed = Math.max(0, -velocity.y); 
+                    let pitchAngle = Math.min((fallSpeed / 30) * Math.PI, Math.PI); 
+                    targetQuaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -pitchAngle);
+                }
+                
+                playerBody.quaternion.slerp(targetQuaternion, 0.05);
+                camera.fov = THREE.MathUtils.lerp(camera.fov, Math.min(75 + (velocity.length() * 0.7), 120), 0.1);
+                camera.updateProjectionMatrix();
+
+                altHud.innerText = Math.max(0, playerPos.y - 1).toFixed(1);
+                velHud.innerText = (velocity.length() * 3.6).toFixed(1);
+                if (velocity.length() < 0.5 && Math.abs(force.y) < 10 && currentDistance > physics.restLength) {
+                     stateHud.innerText = i18nDict[currentLang].stateStable; stateHud.style.color = "#4ae0c0";
+                }
+            }
+
+            let localFootOffset = new THREE.Vector3(0, -1.7, 0);
+            if (isJumping) localFootOffset.applyQuaternion(playerBody.quaternion);
+            
+            let footPos = playerPos.clone().add(localFootOffset);
+            let ropeVector = new THREE.Vector3().subVectors(footPos, anchorPos);
+            let currentDist = ropeVector.length();
+            let slack = Math.max(0, physics.restLength - currentDist);
+            
+            let curve;
+            let thickness = 0.005;
+
+            if (slack > 0.05) {
+                let points = [];
+                let segments = 64; 
+                let dirNorm = ropeVector.clone().normalize();
+                let up = new THREE.Vector3(0, 1, 0);
+                if (Math.abs(dirNorm.y) > 0.99) up.set(1, 0, 0);
+                let perp1 = new THREE.Vector3().crossVectors(dirNorm, up).normalize();
+                let perp2 = new THREE.Vector3().crossVectors(dirNorm, perp1).normalize();
+
+                for (let i = 0; i <= segments; i++) {
+                    let t = i / segments;
+                    let basePos = new THREE.Vector3().lerpVectors(anchorPos, footPos, t);
+                    let envelope = Math.sin(t * Math.PI); 
+                    
+                    basePos.y -= envelope * slack * 0.2; 
+                    let freq = 5; 
+                    basePos.add(perp1.clone().multiplyScalar(Math.sin(t * Math.PI * freq) * slack * 0.15 * envelope));
+                    basePos.add(perp2.clone().multiplyScalar(Math.cos(t * Math.PI * freq * 1.2) * slack * 0.15 * envelope));
+                    points.push(basePos);
+                }
+                curve = new THREE.CatmullRomCurve3(points);
+            } else {
+                curve = new THREE.LineCurve3(anchorPos, footPos);
+            }
+
+            if (bungyRopeMesh.geometry) bungyRopeMesh.geometry.dispose();
+            bungyRopeMesh.geometry = new THREE.TubeGeometry(curve, slack > 0.05 ? 64 : 1, thickness, 6, false);
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
